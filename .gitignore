@@ -22,6 +22,8 @@ application.properties
 application-*.properties
 !application.properties.example
 !application-prod.properties.example
+!**/src/test/resources/application-test.properties
+
 
 *.secret
 *.pem

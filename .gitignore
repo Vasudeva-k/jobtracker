@@ -18,7 +18,6 @@ build/
 .env.*
 !.env.example
 
-application.properties
 application-*.properties
 !application.properties.example
 !application-prod.properties.example

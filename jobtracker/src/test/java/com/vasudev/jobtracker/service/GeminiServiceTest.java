@@ -138,8 +138,10 @@ class GeminiServiceTest {
                 .thenThrow(new HttpServerErrorException(HttpStatus.SERVICE_UNAVAILABLE, "Service Unavailable"));
 
         GeminiServiceUnavailableException ex = assertThrows(GeminiServiceUnavailableException.class, () -> geminiService.askGemini("Hello"));
-        assertTrue(ex.getMessage().contains("temporarily unavailable"));
+        assertEquals("Gemini AI is temporarily busy. Please try again in a few minutes.", ex.getMessage());
         assertEquals("GEMINI_SERVICE_UNAVAILABLE", ex.getErrorCode());
+        // Verify it retried at most once (total 2 exchange attempts)
+        verify(restTemplate, times(2)).exchange(anyString(), eq(HttpMethod.POST), any(HttpEntity.class), eq(Map.class));
     }
 
     @Test
@@ -147,10 +149,11 @@ class GeminiServiceTest {
         ReflectionTestUtils.setField(geminiService, "apiKey", "AIzaSyD-ValidKeySample12345");
 
         when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), any(HttpEntity.class), eq(Map.class)))
-                .thenThrow(new ResourceAccessException("Read timed out"));
+                .thenThrow(new ResourceAccessException("Read timed out", new java.net.SocketTimeoutException("Read timed out")));
 
-        RuntimeException ex = assertThrows(RuntimeException.class, () -> geminiService.askGemini("Hello"));
-        assertTrue(ex.getMessage().contains("Network timeout or connection error"));
+        GeminiServiceUnavailableException ex = assertThrows(GeminiServiceUnavailableException.class, () -> geminiService.askGemini("Hello"));
+        assertEquals("Gemini AI is taking too long to respond. Please try again later.", ex.getMessage());
+        assertEquals("GEMINI_SERVICE_UNAVAILABLE", ex.getErrorCode());
     }
 
     @Test

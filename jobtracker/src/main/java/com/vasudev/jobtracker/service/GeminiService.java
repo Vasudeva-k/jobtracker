@@ -216,6 +216,8 @@ public class GeminiService {
                 status.put("message", "Gemini AI has reached its usage limit. Please try again later.");
             } else if (code == 404) {
                 status.put("message", "Gemini model not found (HTTP 404). Verify model endpoint.");
+            } else if (code == 503 || code >= 500) {
+                status.put("message", "Gemini AI is temporarily busy. Please try again in a few minutes.");
             } else {
                 status.put("message", "Gemini HTTP error: " + code);
             }
@@ -226,7 +228,11 @@ public class GeminiService {
             status.put("responseReceived", false);
             status.put("responseParsed", false);
             status.put("source", "FALLBACK");
-            status.put("message", "Network timeout or connection failure communicating with Gemini API.");
+            if (isTimeoutException(ex)) {
+                status.put("message", "Gemini AI is taking too long to respond. Please try again later.");
+            } else {
+                status.put("message", "Unable to connect to Gemini AI. Please try again later.");
+            }
             return status;
         } catch (Exception ex) {
             status.put("requestSuccessful", false);
@@ -321,7 +327,13 @@ public class GeminiService {
             result.put("httpStatus", code);
             result.put("generatedText", "");
             result.put("source", "FALLBACK");
-            result.put("message", "Gemini API HTTP Error " + code + ": " + ex.getStatusText());
+            if (code == 429) {
+                result.put("message", "Gemini AI has reached its usage limit. Please try again later.");
+            } else if (code == 503 || code >= 500) {
+                result.put("message", "Gemini AI is temporarily busy. Please try again in a few minutes.");
+            } else {
+                result.put("message", "Gemini API HTTP Error " + code + ": " + ex.getStatusText());
+            }
             return result;
         } catch (org.springframework.web.client.ResourceAccessException ex) {
             log.error("[AI] Gemini API request network error: {}", ex.getMessage());
@@ -330,7 +342,11 @@ public class GeminiService {
             result.put("httpStatus", 503);
             result.put("generatedText", "");
             result.put("source", "FALLBACK");
-            result.put("message", "Network timeout or connection failure communicating with Gemini API.");
+            if (isTimeoutException(ex)) {
+                result.put("message", "Gemini AI is taking too long to respond. Please try again later.");
+            } else {
+                result.put("message", "Unable to connect to Gemini AI. Please try again later.");
+            }
             return result;
         } catch (Exception ex) {
             log.error("[AI] Gemini API communication error: {}", ex.getMessage());
@@ -386,7 +402,7 @@ public class GeminiService {
 
         try {
             ResponseEntity<Map> response = null;
-            for (int attempt = 1; attempt <= 3; attempt++) {
+            for (int attempt = 1; attempt <= 2; attempt++) {
                 try {
                     response = restTemplate.exchange(
                             url,
@@ -396,8 +412,8 @@ public class GeminiService {
                     );
                     break;
                 } catch (HttpStatusCodeException ex) {
-                    if (ex.getStatusCode().value() == 503 && attempt < 3) {
-                        log.warn("[AI] Gemini 503 high demand spike. Retrying attempt {}/3...", attempt + 1);
+                    if (ex.getStatusCode().value() == 503 && attempt < 2) {
+                        log.warn("[AI] Gemini 503 high demand spike. Retrying attempt {}/2...", attempt + 1);
                         try {
                             Thread.sleep(600);
                         } catch (InterruptedException ignored) {
@@ -434,8 +450,14 @@ public class GeminiService {
                 return "";
             }
 
-            Map<String, Object> content =
-                    (Map<String, Object>) candidates.get(0).get("content");
+            Map<String, Object> candidate = candidates.get(0);
+            if (candidate == null) {
+                log.warn("[AI] Candidate element was null");
+                log.info("[AI] Response source: FALLBACK");
+                return "";
+            }
+
+            Map<String, Object> content = (Map<String, Object>) candidate.get("content");
 
             if (content == null) {
                 log.warn("[AI] No content block in candidate response");
@@ -498,9 +520,9 @@ public class GeminiService {
                 );
             }
 
-            if (statusCode >= 500) {
+            if (statusCode == 503 || statusCode >= 500) {
                 throw new GeminiServiceUnavailableException(
-                        "Gemini AI service temporarily unavailable (HTTP " + statusCode + "). Please try again later."
+                        "Gemini AI is temporarily busy. Please try again in a few minutes."
                 );
             }
 
@@ -510,7 +532,10 @@ public class GeminiService {
             log.error("[AI] Gemini API call failed - Network/Timeout error: {}", ex.getMessage());
             log.error("[AI] Error type: Network connection/timeout error");
             log.info("[AI] Response source: FALLBACK");
-            throw new GeminiServiceUnavailableException("Network timeout or connection error communicating with Gemini AI.");
+            if (isTimeoutException(ex)) {
+                throw new GeminiServiceUnavailableException("Gemini AI is taking too long to respond. Please try again later.");
+            }
+            throw new GeminiServiceUnavailableException("Unable to connect to Gemini AI. Please try again later.");
 
         } catch (GeminiException ex) {
             throw ex;
@@ -520,6 +545,14 @@ public class GeminiService {
             log.info("[AI] Response source: FALLBACK");
             throw new GeminiException("Unable to communicate with Gemini AI: " + ex.getMessage());
         }
+    }
+
+    private static boolean isTimeoutException(org.springframework.web.client.ResourceAccessException ex) {
+        if (ex.getCause() instanceof java.net.SocketTimeoutException) {
+            return true;
+        }
+        String msg = ex.getMessage();
+        return msg != null && (msg.toLowerCase().contains("timed out") || msg.toLowerCase().contains("timeout"));
     }
 
     /**

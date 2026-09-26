@@ -6,7 +6,7 @@ public class GeminiServiceUnavailableException extends GeminiException {
 
     public GeminiServiceUnavailableException() {
         super(
-                "Gemini AI service is temporarily unavailable. Please try again later.",
+                "Gemini AI is temporarily busy. Please try again in a few minutes.",
                 "GEMINI_SERVICE_UNAVAILABLE",
                 HttpStatus.SERVICE_UNAVAILABLE
         );
@@ -14,7 +14,7 @@ public class GeminiServiceUnavailableException extends GeminiException {
 
     public GeminiServiceUnavailableException(String message) {
         super(
-                message != null ? message : "Gemini AI service is temporarily unavailable. Please try again later.",
+                message != null ? message : "Gemini AI is temporarily busy. Please try again in a few minutes.",
                 "GEMINI_SERVICE_UNAVAILABLE",
                 HttpStatus.SERVICE_UNAVAILABLE
         );
